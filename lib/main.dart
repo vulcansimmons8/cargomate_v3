@@ -1,74 +1,40 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
-  runApp(const ProviderScope(child: CargoMateApp()));
+import 'routes/navRoutes.dart';
+import 'screens/sign_in_page.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
+  await Supabase.initialize(
+    url: dotenv.env['SUPABASE_URL']!,
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+  );
+  runApp(const MyApp());
 }
 
-final _router = GoRouter(
-  initialLocation: '/welcome',
-  routes: [
-    GoRoute(path: '/welcome', builder: (_, __) => const WelcomeScreen()),
-    GoRoute(path: '/auth', builder: (_, __) => const AuthScreen()),
-    GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
-  ],
-);
-
-class CargoMateApp extends StatelessWidget {
-  const CargoMateApp({super.key});
-
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
+    return MaterialApp(
       title: 'CargoMate',
-      routerConfig: _router,
       theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF7C3AED),
         useMaterial3: true,
+        colorSchemeSeed: const Color(0xFF7C3AED),
       ),
+      initialRoute: NavRoutes.onboarding,
+      routes: NavRoutes.routes,
+      onGenerateRoute: (settings) {
+        final session = Supabase.instance.client.auth.currentSession;
+        final isAuthPath = settings.name == NavRoutes.signIn;
+        if (session == null && !isAuthPath) {
+          return MaterialPageRoute(builder: (_) => const SignInPage());
+        }
+        return null;
+      },
     );
-  }
-}
-
-class WelcomeScreen extends StatelessWidget {
-  const WelcomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: FilledButton(
-          onPressed: () => context.go('/auth'),
-          child: const Text('Get started'),
-        ),
-      ),
-    );
-  }
-}
-
-class AuthScreen extends StatelessWidget {
-  const AuthScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Sign in')),
-      body: Center(
-        child: FilledButton.tonal(
-          onPressed: () => context.go('/home'),
-          child: const Text('Pretend sign-in → Home'),
-        ),
-      ),
-    );
-  }
-}
-
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: Text('Home: Book a delivery')));
   }
 }
