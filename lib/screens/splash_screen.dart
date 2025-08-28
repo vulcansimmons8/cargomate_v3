@@ -52,18 +52,16 @@ class _SplashScreenState extends State<SplashScreen> {
         final phoneHint = user.phone ?? '';
         Navigator.pushReplacementNamed(
           context,
-          NavRoutes.profileSetup,
+          NavRoutes.signUp,
           arguments: phoneHint,
         );
-      } else {
-        Navigator.pushReplacementNamed(context, NavRoutes.homeRouter);
       }
     } catch (_) {
       // If profile query fails for any reason, be safe and send them to setup.
       final phoneHint = Supabase.instance.client.auth.currentUser?.phone ?? '';
       Navigator.pushReplacementNamed(
         context,
-        NavRoutes.profileSetup,
+        NavRoutes.signUp,
         arguments: phoneHint,
       );
     }

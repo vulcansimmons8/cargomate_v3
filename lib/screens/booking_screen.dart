@@ -4,7 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../widgets/widgets.dart';
-import 'map_picker_screen.dart'; // <-- ensure this exists as implemented earlier
+import 'map_picker_screen.dart'; // Ensure this exists as implemented earlier
 
 class BookingScreen extends StatefulWidget {
   const BookingScreen({super.key});
@@ -94,7 +94,6 @@ class _BookingScreenState extends State<BookingScreen> {
         'drop_address': _dropCtl.text.trim(),
         'vehicle_type': _vehicle,
         'price': price,
-        // 'status': 'pending', // optional default handled by DB
       });
 
       if (!mounted) return;
@@ -117,26 +116,30 @@ class _BookingScreenState extends State<BookingScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            TextField(
-              controller: _pickupCtl,
-              readOnly: true,
-              decoration: InputDecoration(
-                labelText: 'Pickup',
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.location_on_outlined),
-                  onPressed: () => _pickOnMap(isPickup: true),
+            // Pickup Location (Clickable)
+            GestureDetector(
+              onTap: () => _pickOnMap(isPickup: true),
+              child: AbsorbPointer(
+                child: TextField(
+                  controller: _pickupCtl,
+                  decoration: const InputDecoration(
+                    labelText: 'Pickup',
+                    suffixIcon: Icon(Icons.location_on_outlined),
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _dropCtl,
-              readOnly: true,
-              decoration: InputDecoration(
-                labelText: 'Drop',
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.location_searching),
-                  onPressed: () => _pickOnMap(isPickup: false),
+            // Drop Location (Clickable)
+            GestureDetector(
+              onTap: () => _pickOnMap(isPickup: false),
+              child: AbsorbPointer(
+                child: TextField(
+                  controller: _dropCtl,
+                  decoration: const InputDecoration(
+                    labelText: 'Drop',
+                    suffixIcon: Icon(Icons.location_searching),
+                  ),
                 ),
               ),
             ),

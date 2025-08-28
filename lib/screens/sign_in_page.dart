@@ -1,60 +1,70 @@
+import 'package:cargomate_v3/viewmodel/role_view_model.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../routes/navRoutes.dart';
 
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key});
+
   @override
   State<SignInPage> createState() => _SignInPageState();
 }
 
 class _SignInPageState extends State<SignInPage> {
   final _formKey = GlobalKey<FormState>();
-  final _fullName = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  bool _isLogin = true;
   bool _busy = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
-    _fullName.dispose();
     _email.dispose();
     _password.dispose();
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  Future<void> _signIn() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
+
     final supa = Supabase.instance.client;
 
     try {
-      if (_isLogin) {
-        await supa.auth.signInWithPassword(
-          email: _email.text.trim(),
-          password: _password.text,
-        );
-      } else {
-        final res = await supa.auth.signUp(
-          email: _email.text.trim(),
-          password: _password.text,
-          data: {'full_name': _fullName.text.trim()},
-        );
-        final user = res.user ?? supa.auth.currentUser;
-        if (user != null) {
-          await supa.from('profiles').upsert({
-            'user_id': user.id,
-            'full_name': _fullName.text.trim(),
-            'role': 'customer',
-          }, onConflict: 'user_id');
+      // Sign in user
+      await supa.auth.signInWithPassword(
+        email: _email.text.trim(),
+        password: _password.text,
+      );
+
+      final user = supa.auth.currentUser;
+      if (user != null) {
+        // Fetch user role from Supabase
+        final profile = await supa
+            .from('profiles')
+            .select('role')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        final role = profile?['role'] ?? 'customer';
+
+        // Update RoleViewModel
+        if (mounted) {
+          final roleVM = context.read<RoleViewModel>();
+          roleVM.setRole(role);
+
+          // Navigate based on role
+          if (role == 'driver' || role == 'bikeRider') {
+            Navigator.pushReplacementNamed(context, NavRoutes.driverHome);
+          } else {
+            Navigator.pushReplacementNamed(context, NavRoutes.homePage);
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Signed in successfully!')),
+          );
         }
-      }
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, NavRoutes.homePage);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_isLogin ? 'Signed in!' : 'Account created!')),
-        );
       }
     } on AuthException catch (e) {
       if (mounted) {
@@ -82,7 +92,7 @@ class _SignInPageState extends State<SignInPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_isLogin ? 'Sign in' : 'Sign in / Sign up')),
+      appBar: AppBar(title: const Text('Sign In'), centerTitle: true),
       body: AbsorbPointer(
         absorbing: _busy,
         child: Padding(
@@ -90,15 +100,8 @@ class _SignInPageState extends State<SignInPage> {
           child: Form(
             key: _formKey,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (!_isLogin)
-                  TextFormField(
-                    controller: _fullName,
-                    decoration: const InputDecoration(labelText: 'Full name'),
-                    validator: (v) => (v == null || v.trim().length < 3)
-                        ? 'Enter name'
-                        : null,
-                  ),
                 TextFormField(
                   controller: _email,
                   decoration: const InputDecoration(labelText: 'Email'),
@@ -109,26 +112,42 @@ class _SignInPageState extends State<SignInPage> {
                 ),
                 TextFormField(
                   controller: _password,
-                  decoration: const InputDecoration(labelText: 'Password'),
-                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
+                    ),
+                  ),
+                  obscureText: _obscurePassword,
                   validator: (v) =>
                       (v == null || v.length < 6) ? 'Min 6 chars' : null,
                 ),
                 const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _submit,
-                  child: Text(_isLogin ? 'Sign in' : 'Create account'),
-                ),
+                FilledButton(onPressed: _signIn, child: const Text('Sign In')),
+                const SizedBox(height: 12),
                 TextButton(
-                  onPressed: () => setState(() => _isLogin = !_isLogin),
-                  child: Text(
-                    _isLogin
-                        ? "Don't have an account? Sign up"
-                        : "Already have an account? Sign in",
+                  onPressed: () {
+                    Navigator.pushNamed(
+                      context,
+                      NavRoutes.signUp,
+                    ); // ✅ Navigate to Sign Up page
+                  },
+                  child: const Text(
+                    "Don't have an account? Sign up",
+                    style: TextStyle(fontSize: 14),
                   ),
                 ),
                 if (_busy) const SizedBox(height: 12),
-                if (_busy) const CircularProgressIndicator(),
+                if (_busy) const Center(child: CircularProgressIndicator()),
               ],
             ),
           ),

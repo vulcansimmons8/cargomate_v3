@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../widgets/widgets.dart';
 
@@ -63,6 +64,9 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final supa = Supabase.instance.client;
+    final user = supa.auth.currentUser;
+
     final pickupAddr = (d['pickup_address'] ?? 'Unknown').toString();
     final dropAddr = (d['drop_address'] ?? 'Unknown').toString();
     final price = (d['price'] ?? '').toString();
@@ -70,20 +74,21 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen> {
     final status = (d['status'] ?? 'pending').toString();
     final created = (d['created_at'] ?? '').toString();
 
-    // ✅ Build a Set<Marker> directly
+    final bool isDriverForThis =
+        d['driver_id'] != null && user != null && d['driver_id'] == user.id;
+
+    // Build markers set
     final markers = <Marker>{
       if (_pickup != null)
-        Marker(
-          markerId: const MarkerId('pickup'),
-          position: _pickup!,
-          infoWindow: const InfoWindow(title: 'Pickup'),
-        ),
+        const Marker(
+          markerId: MarkerId('pickup'),
+          position: LatLng(0, 0), // will be replaced below
+        ).copyWith(positionParam: _pickup),
       if (_drop != null)
-        Marker(
-          markerId: const MarkerId('drop'),
-          position: _drop!,
-          infoWindow: const InfoWindow(title: 'Drop'),
-        ),
+        const Marker(
+          markerId: MarkerId('drop'),
+          position: LatLng(0, 0),
+        ).copyWith(positionParam: _drop),
     };
 
     return Scaffold(
@@ -189,12 +194,44 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen> {
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               child: Row(
                 children: [
-                  Expanded(
-                    child: SecondaryButton(
-                      label: 'Close',
-                      onPressed: () => Navigator.pop(context),
+                  if (isDriverForThis) ...[
+                    Expanded(
+                      child: SecondaryButton(
+                        label: 'Start (Enroute)',
+                        onPressed: () async {
+                          await supa
+                              .from('deliveries')
+                              .update({'status': 'enroute'})
+                              .eq('id', d['id']);
+                          if (!mounted) return;
+                          AppSnack.show(context, 'Status: enroute');
+                          setState(() => d['status'] = 'enroute');
+                        },
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: PrimaryButton(
+                        label: 'Complete',
+                        onPressed: () async {
+                          await supa
+                              .from('deliveries')
+                              .update({'status': 'delivered'})
+                              .eq('id', d['id']);
+                          if (!mounted) return;
+                          AppSnack.show(context, 'Delivered!');
+                          setState(() => d['status'] = 'delivered');
+                        },
+                      ),
+                    ),
+                  ] else ...[
+                    Expanded(
+                      child: SecondaryButton(
+                        label: 'Close',
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

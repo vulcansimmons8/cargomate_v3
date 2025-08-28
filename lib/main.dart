@@ -1,6 +1,8 @@
 // lib/main.dart
+import 'package:cargomate_v3/viewmodel/role_view_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'routes/navRoutes.dart';
@@ -14,7 +16,16 @@ Future<void> main() async {
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
 
-  runApp(const CargoMateApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<RoleViewModel>(
+          create: (_) => RoleViewModel(), // Load role on startup
+        ),
+      ],
+      child: const CargoMateApp(),
+    ),
+  );
 }
 
 class CargoMateApp extends StatelessWidget {
@@ -29,7 +40,6 @@ class CargoMateApp extends StatelessWidget {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      // Start at Splash → Splash redirects to NavRoutes.homeRouter
       initialRoute: NavRoutes.splash,
       routes: NavRoutes.routes,
       onUnknownRoute: (_) => MaterialPageRoute(

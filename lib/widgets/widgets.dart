@@ -1,5 +1,7 @@
+import 'package:cargomate_v3/viewmodel/role_view_model.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../routes/navRoutes.dart';
@@ -329,6 +331,23 @@ Future<bool> showConfirmDialog(
 }
 
 // ==============================
+// Logout helper
+// ==============================
+Future<void> _logout(BuildContext context) async {
+  final supa = Supabase.instance.client;
+  final roleVM = context.read<RoleViewModel>();
+
+  await supa.auth.signOut();
+  roleVM.clearRole();
+
+  Navigator.pushNamedAndRemoveUntil(
+    context,
+    NavRoutes.signIn,
+    (route) => false,
+  );
+}
+
+// ==============================
 // Customer Drawer
 // ==============================
 class CustomerDrawer extends StatelessWidget {
@@ -375,6 +394,21 @@ class CustomerDrawer extends StatelessWidget {
               title: const Text('My Deliveries'),
               onTap: () => _go(context, NavRoutes.myDeliveries),
             ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Logout'),
+              onTap: () async {
+                final confirm = await showConfirmDialog(
+                  context,
+                  title: 'Logout',
+                  message: 'Are you sure you want to log out?',
+                );
+                if (confirm) {
+                  _logout(context);
+                }
+              },
+            ),
           ],
         ),
       ),
@@ -419,7 +453,21 @@ class DriverDrawer extends StatelessWidget {
               title: const Text('Driver Home'),
               onTap: () => _go(context, NavRoutes.driverHome),
             ),
-            // Add more driver-only items later (jobs, earnings, etc.)
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Logout'),
+              onTap: () async {
+                final confirm = await showConfirmDialog(
+                  context,
+                  title: 'Logout',
+                  message: 'Are you sure you want to log out?',
+                );
+                if (confirm) {
+                  _logout(context);
+                }
+              },
+            ),
           ],
         ),
       ),
@@ -427,10 +475,7 @@ class DriverDrawer extends StatelessWidget {
   }
 }
 
-// ==============================
-// AppScaffold (auto drawer)
-// ==============================
-class AppScaffold extends StatefulWidget {
+class AppScaffold extends StatelessWidget {
   final String title;
   final Widget body;
   final List<Widget>? actions;
@@ -443,49 +488,18 @@ class AppScaffold extends StatefulWidget {
   });
 
   @override
-  State<AppScaffold> createState() => _AppScaffoldState();
-}
-
-class _AppScaffoldState extends State<AppScaffold> {
-  String? _role;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRole();
-  }
-
-  Future<void> _loadRole() async {
-    final supa = Supabase.instance.client;
-    final user = supa.auth.currentUser;
-    if (user == null) {
-      setState(() {
-        _role = 'customer';
-        _loading = false;
-      });
-      return;
-    }
-
-    final profile = await supa
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle();
-    setState(() {
-      _role = profile?['role'] ?? 'customer';
-      _loading = false;
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final roleVM = context.watch<RoleViewModel>();
+
+    // Check the role and assign the correct drawer
+    final drawer = roleVM.role == 'customer'
+        ? const CustomerDrawer()
+        : const DriverDrawer();
+
     return Scaffold(
-      appBar: CustomAppBar(title: widget.title, actions: widget.actions),
-      drawer: _loading
-          ? null
-          : (_role == 'driver' ? const DriverDrawer() : const CustomerDrawer()),
-      body: widget.body,
+      appBar: CustomAppBar(title: title, actions: actions),
+      drawer: drawer,
+      body: body,
     );
   }
 }
