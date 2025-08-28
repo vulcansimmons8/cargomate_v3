@@ -1,71 +1,80 @@
 import 'package:flutter/material.dart';
-import 'package:geocoding/geocoding.dart'; // <-- keep imports at top
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../widgets/widgets.dart';
+import 'map_picker_screen.dart'; // <-- ensure this exists as implemented earlier
+
 class BookingScreen extends StatefulWidget {
   const BookingScreen({super.key});
+
   @override
   State<BookingScreen> createState() => _BookingScreenState();
 }
 
 class _BookingScreenState extends State<BookingScreen> {
-  final _pickup = TextEditingController();
-  final _drop = TextEditingController();
+  final _pickupCtl = TextEditingController();
+  final _dropCtl = TextEditingController();
+
+  LatLng? _pickupPos;
+  LatLng? _dropPos;
   String _vehicle = 'bike';
   bool _busy = false;
 
   @override
   void dispose() {
-    _pickup.dispose();
-    _drop.dispose();
+    _pickupCtl.dispose();
+    _dropCtl.dispose();
     super.dispose();
   }
 
-  Future<void> _pickLocations() async {
-    // Opens LocationSelectionScreen and waits for result: {'pickup': ..., 'drop': ...}
-    final res = await Navigator.pushNamed(context, '/locationSelection');
+  Future<void> _pickOnMap({required bool isPickup}) async {
+    final res = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MapPickerScreen(mode: isPickup ? 'pickup' : 'drop'),
+      ),
+    );
+
     if (res is Map) {
-      setState(() {
-        _pickup.text = (res['pickup'] ?? '').toString();
-        _drop.text = (res['drop'] ?? '').toString();
-      });
+      final address = (res['address'] ?? '').toString();
+      final lat = (res['lat'] as num?)?.toDouble();
+      final lng = (res['lng'] as num?)?.toDouble();
+
+      if (address.isNotEmpty && lat != null && lng != null) {
+        setState(() {
+          if (isPickup) {
+            _pickupCtl.text = address;
+            _pickupPos = LatLng(lat, lng);
+          } else {
+            _dropCtl.text = address;
+            _dropPos = LatLng(lat, lng);
+          }
+        });
+      }
     }
   }
 
   Future<void> _book() async {
+    if (_pickupPos == null || _dropPos == null) {
+      AppSnack.show(context, 'Please choose pickup and drop locations');
+      return;
+    }
+
     setState(() => _busy = true);
     try {
-      final pickupText = _pickup.text.trim();
-      final dropText = _drop.text.trim();
-      if (pickupText.isEmpty || dropText.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please choose pickup and drop locations'),
-          ),
-        );
-        setState(() => _busy = false);
-        return;
-      }
-
       final supa = Supabase.instance.client;
       final user = supa.auth.currentUser;
       if (user == null) throw 'Not signed in';
 
-      // 1) Geocode addresses → lat/lng
-      final pickupResults = await locationFromAddress(pickupText);
-      if (pickupResults.isEmpty) throw 'Could not find pickup location';
-      final dropResults = await locationFromAddress(dropText);
-      if (dropResults.isEmpty) throw 'Could not find drop location';
-
-      final pickupLat = pickupResults.first.latitude;
-      final pickupLng = pickupResults.first.longitude;
-      final dropLat = dropResults.first.latitude;
-      final dropLng = dropResults.first.longitude;
-
-      // 2) Distance (km) + simple pricing
       final distanceKm =
-          Geolocator.distanceBetween(pickupLat, pickupLng, dropLat, dropLng) /
+          Geolocator.distanceBetween(
+            _pickupPos!.latitude,
+            _pickupPos!.longitude,
+            _dropPos!.latitude,
+            _dropPos!.longitude,
+          ) /
           1000.0;
 
       final baseRate = (_vehicle == 'truck')
@@ -75,29 +84,25 @@ class _BookingScreenState extends State<BookingScreen> {
           : 5.0;
       final price = (distanceKm * baseRate).round();
 
-      // 3) Insert
       await supa.from('deliveries').insert({
         'sender_id': user.id,
-        'pickup_lat': pickupLat,
-        'pickup_lng': pickupLng,
-        'drop_lat': dropLat,
-        'drop_lng': dropLng,
-        'pickup_address': pickupText,
-        'drop_address': dropText,
+        'pickup_lat': _pickupPos!.latitude,
+        'pickup_lng': _pickupPos!.longitude,
+        'drop_lat': _dropPos!.latitude,
+        'drop_lng': _dropPos!.longitude,
+        'pickup_address': _pickupCtl.text.trim(),
+        'drop_address': _dropCtl.text.trim(),
         'vehicle_type': _vehicle,
         'price': price,
+        // 'status': 'pending', // optional default handled by DB
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Delivery booked: GHS $price')));
-      Navigator.pop(context); // back to Home
+      AppSnack.show(context, 'Delivery booked: GHS $price');
+      Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        AppSnack.show(context, 'Error: $e');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -106,52 +111,54 @@ class _BookingScreenState extends State<BookingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Book a delivery')),
+    return AppScaffold(
+      title: 'Book a Delivery',
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
-              controller: _pickup,
+              controller: _pickupCtl,
               readOnly: true,
               decoration: InputDecoration(
                 labelText: 'Pickup',
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.location_on_outlined),
-                  onPressed: _pickLocations,
+                  onPressed: () => _pickOnMap(isPickup: true),
                 ),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _drop,
+              controller: _dropCtl,
               readOnly: true,
               decoration: InputDecoration(
                 labelText: 'Drop',
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.location_searching),
-                  onPressed: _pickLocations,
+                  onPressed: () => _pickOnMap(isPickup: false),
                 ),
               ),
             ),
             const SizedBox(height: 12),
-            DropdownButton<String>(
+            DropdownButtonFormField<String>(
               value: _vehicle,
+              decoration: const InputDecoration(labelText: 'Vehicle'),
               items: const [
                 DropdownMenuItem(value: 'bike', child: Text('Bike')),
                 DropdownMenuItem(value: 'van', child: Text('Van')),
                 DropdownMenuItem(value: 'truck', child: Text('Truck')),
               ],
-              onChanged: (v) => setState(() => _vehicle = v!),
+              onChanged: (v) => setState(() => _vehicle = v ?? 'bike'),
             ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _busy ? null : _book,
-              child: _busy
-                  ? const CircularProgressIndicator()
-                  : const Text('Book delivery'),
+            const Spacer(),
+            SizedBox(
+              width: double.infinity,
+              child: PrimaryButton(
+                label: 'Book delivery',
+                onPressed: _busy ? () {} : _book,
+                loading: _busy,
+              ),
             ),
           ],
         ),

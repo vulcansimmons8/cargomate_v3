@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../routes/navRoutes.dart';
+import '../widgets/widgets.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
-  final String phoneNumber; // passed via NavRoutes.profileSetup
+  final String phoneNumber;
   const ProfileSetupScreen({super.key, required this.phoneNumber});
 
   @override
@@ -9,94 +13,104 @@ class ProfileSetupScreen extends StatefulWidget {
 }
 
 class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
-  final _fullName = TextEditingController();
-  final _email = TextEditingController();
-  bool _busy = false;
+  final _formKey = GlobalKey<FormState>();
+  final _nameCtl = TextEditingController();
+  final _phoneCtl = TextEditingController();
+  String _role = 'customer'; // default
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _phoneCtl.text = widget.phoneNumber;
+  }
 
   @override
   void dispose() {
-    _fullName.dispose();
-    _email.dispose();
+    _nameCtl.dispose();
+    _phoneCtl.dispose();
     super.dispose();
   }
 
-  Future<void> _save() async {
-    setState(() => _busy = true);
-    try {
-      // TODO: persist to Supabase (profiles table) if you’re using phone-first flow.
-      // Example (pseudo):
-      // final supa = Supabase.instance.client;
-      // final user = supa.auth.currentUser;
-      // await supa.from('profiles').upsert({
-      //   'user_id': user.id,
-      //   'full_name': _fullName.text.trim(),
-      //   'phone': widget.phoneNumber,
-      // });
+  Future<void> _saveProfile() async {
+    if (!_formKey.currentState!.validate()) return;
 
-      await Future.delayed(const Duration(milliseconds: 500));
+    setState(() => _loading = true);
+    final supa = Supabase.instance.client;
+    final user = supa.auth.currentUser;
+
+    if (user == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppSnack.show(context, "No signed-in user.");
+      setState(() => _loading = false);
+      return;
+    }
+
+    try {
+      await supa.from('profiles').upsert({
+        'id': user.id, // uuid PK = user id
+        'full_name': _nameCtl.text.trim(),
+        'phone_number': _phoneCtl.text.trim(),
+        'role': _role,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Profile saved (demo)')));
-      Navigator.pop(context, true);
+        NavRoutes.homePage,
+        (route) => false,
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
+      if (!mounted) return;
+      AppSnack.show(context, "Error saving profile: $e");
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final phone = widget.phoneNumber;
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile Setup')),
+      appBar: const CustomAppBar(title: 'Setup Profile'),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.phone_android),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Phone: $phone',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _fullName,
-              decoration: const InputDecoration(
-                labelText: 'Full name',
-                border: OutlineInputBorder(),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            children: [
+              TextFormField(
+                controller: _nameCtl,
+                decoration: const InputDecoration(labelText: 'Full Name'),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email (optional)',
-                border: OutlineInputBorder(),
+              const Gap.h(12),
+              TextFormField(
+                controller: _phoneCtl,
+                decoration: const InputDecoration(labelText: 'Phone Number'),
+                keyboardType: TextInputType.phone,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _busy ? null : _save,
-              child: _busy
-                  ? const CircularProgressIndicator()
-                  : const Text('Save & Continue'),
-            ),
-          ],
+              const Gap.h(12),
+              DropdownButtonFormField<String>(
+                value: _role,
+                decoration: const InputDecoration(labelText: 'Role'),
+                items: const [
+                  DropdownMenuItem(value: 'customer', child: Text('Customer')),
+                  DropdownMenuItem(value: 'driver', child: Text('Driver')),
+                ],
+                onChanged: (val) => setState(() => _role = val ?? 'customer'),
+              ),
+              const Gap.h(24),
+              PrimaryButton(
+                label: 'Save & Continue',
+                onPressed: _saveProfile,
+                loading: _loading,
+              ),
+            ],
+          ),
         ),
       ),
     );
